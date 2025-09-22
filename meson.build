@@ -6,8 +6,4 @@ sources = files(
   'src/ping.c'
 )
 
-headers = files(
-  'src/ping.h'
-)
-
 executable('demo', sources, dependencies : gtkdep)
