@@ -1,24 +1,43 @@
 #include <arpa/inet.h>
-#include <gtk/gtk.h>
-#include <sys/socket.h>
+
+#include "gtk/gtk.h"
+#include "ping-viewer.h"
 #include "ping.h"
 
 static void activate(GtkApplication* app, gpointer user_data) {
     GtkWidget *window;
-    GtkWidget *label;
 
     window = gtk_application_window_new (app);
-    label = gtk_label_new("Hello GNOME!");
-    gtk_container_add (GTK_CONTAINER (window), label);
-    gtk_window_set_title(GTK_WINDOW (window), "Welcome to GNOME");
-    gtk_window_set_default_size(GTK_WINDOW (window), 400, 200);
-    gtk_widget_show_all(window);
+    gtk_window_set_title(GTK_WINDOW(window), "Ping Viewer");
+    gtk_window_set_default_size(GTK_WINDOW(window), 1000, 300);
+
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_window_set_child(GTK_WINDOW(window), GTK_WIDGET(box));
+
+    GtkWidget *list_host = ping_create_host_list();
+    gtk_box_append(GTK_BOX(box), list_host);
+
+    gtk_window_present(GTK_WINDOW(window));
 } 
 
 int main(int argc, char **argv) {
     GtkApplication *app;
     int status;
 
+#if GLIB_CHECK_VERSION(2, 74, 0)
+    app = gtk_application_new("com.ping.viewer", G_APPLICATION_DEFAULT_FLAGS);
+#else
+    app = gtk_application_new("com.ping.viewer", G_APPLICATION_FLAGS_NONE);
+#endif
+
+    g_signal_connect(app, "activate", G_CALLBACK(activate), NULL);
+    status = g_application_run(G_APPLICATION(app), argc, argv);
+    g_object_unref(app);
+
+    return status;
+}
+
+int ping_loop(void) {
     struct sockaddr_in sock_addr;
     const char addr[] = "1.1.1.1";
 
@@ -49,16 +68,6 @@ int main(int argc, char **argv) {
     memset(rcv_buf, 0, sizeof rcv_buf);
     inet_ntop(AF_INET, &(rcv_addr.sin_addr), rcv_buf, rcv_addr_len);
     printf("ICMP echo reply from %s, seq no %d\n", rcv_buf, seq_no);
-
-#if GLIB_CHECK_VERSION(2, 74, 0)
-    app = gtk_application_new(NULL, G_APPLICATION_DEFAULT_FLAGS);
-#else
-    app = gtk_application_new(NULL, G_APPLICATION_FLAGS_NONE);
-#endif
-
-    g_signal_connect(app, "activate", G_CALLBACK(activate), NULL);
-    // status = g_application_run(G_APPLICATION(app), argc, argv);
-    // g_object_unref(app);
-
-    return status;
+    return 0;
 }
+
