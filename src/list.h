@@ -15,14 +15,10 @@
     static void bind_listitem_##column_name##_cb(GtkListItemFactory *factory, GtkListItem *list_item) { \
         GtkWidget *label = gtk_list_item_get_child(list_item); \
         PingHost *host = gtk_list_item_get_item(list_item); \
-        GValue val = G_VALUE_INIT; \
-        g_value_init(&val, G_TYPE_STRING); \
-        g_object_get_property(G_OBJECT(host), prop_name, &val); \
-        gtk_label_set_label(GTK_LABEL(label), g_value_get_string(&val)); \
+        g_object_bind_property(G_OBJECT(host), prop_name, G_OBJECT(label), "label", G_BINDING_DEFAULT | G_BINDING_SYNC_CREATE); \
     }
 
-#define LIST_CB(column_name, prop_name) \
-    LIST_SET_LISTITEM(column_name) \
+#define LIST_CB(column_name, prop_name) LIST_SET_LISTITEM(column_name) \
     LIST_BIND_LISTITEM(column_name, prop_name)
 
 #define LIST_ADD_COLUMN(col_view, column, column_name) { \
