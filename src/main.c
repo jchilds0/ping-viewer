@@ -1,8 +1,9 @@
 #include <arpa/inet.h>
 
+#include "glib-object.h"
 #include "gtk/gtk.h"
-#include "ping-viewer.h"
 #include "ping.h"
+#include "list.h"
 
 static void activate(GtkApplication* app, gpointer user_data) {
     GtkWidget *window;
@@ -14,8 +15,24 @@ static void activate(GtkApplication* app, gpointer user_data) {
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_window_set_child(GTK_WINDOW(window), GTK_WIDGET(box));
 
+    GtkWidget *taskbar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
     GtkWidget *list_host = ping_create_host_list();
-    gtk_box_append(GTK_BOX(box), list_host);
+
+    /* taskbar */
+    gtk_box_append(GTK_BOX(box), taskbar);
+
+    GtkWidget *button_add_host = gtk_button_new();
+    gtk_button_set_label(GTK_BUTTON(button_add_host), "add host");
+    g_signal_connect(button_add_host, "clicked", G_CALLBACK(ping_list_add_host), list_host);
+    gtk_box_append(GTK_BOX(taskbar), button_add_host);
+
+    /* host list */
+    GtkWidget* scroll_window = gtk_scrolled_window_new();
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll_window), list_host);
+    gtk_widget_set_vexpand(scroll_window, true);
+    gtk_widget_set_hexpand(scroll_window, true);
+
+    gtk_box_append(GTK_BOX(box), scroll_window);
 
     gtk_window_present(GTK_WINDOW(window));
 } 
@@ -36,38 +53,3 @@ int main(int argc, char **argv) {
 
     return status;
 }
-
-int ping_loop(void) {
-    struct sockaddr_in sock_addr;
-    const char addr[] = "1.1.1.1";
-
-    int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
-    if (sock < 0) {
-        perror("socket");
-        return sock;
-    }
-
-    if (ping_addr(addr, sizeof( addr ), &sock_addr) < 0) {
-        return 1;
-    }
-
-    struct timeval timeout = {3, 0};
-    if (ping_send(sock, (struct sockaddr *)&sock_addr, sizeof( sock_addr ), 0) < 0) {
-        return 1;
-    }
-
-    struct sockaddr_in rcv_addr = {0};
-    socklen_t rcv_addr_len = sizeof rcv_addr;
-    int seq_no = 0;
-
-    if (ping_recv(sock, timeout, (struct sockaddr *)&rcv_addr, &rcv_addr_len, &seq_no) < 0) {
-        return 1;
-    }
-
-    char rcv_buf[2048];
-    memset(rcv_buf, 0, sizeof rcv_buf);
-    inet_ntop(AF_INET, &(rcv_addr.sin_addr), rcv_buf, rcv_addr_len);
-    printf("ICMP echo reply from %s, seq no %d\n", rcv_buf, seq_no);
-    return 0;
-}
-

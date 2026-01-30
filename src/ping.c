@@ -1,3 +1,10 @@
+/*
+ * ping.c 
+ *
+ * util functions for pinging hosts
+ *
+ */
+
 #include "ping.h"
 
 #include <stdio.h>
@@ -76,5 +83,39 @@ int ping_recv(int sock, struct timeval timeout, struct sockaddr *rcv_addr, sockl
         printf("Got ICMP packet with type 0x%x ?!?\n", rcv_hdr.type);
         return -1;
     }
+}
+
+int ping_loop(void) {
+    struct sockaddr_in sock_addr;
+    const char addr[] = "1.1.1.1";
+
+    int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
+    if (sock < 0) {
+        perror("socket");
+        return sock;
+    }
+
+    if (ping_addr(addr, sizeof( addr ), &sock_addr) < 0) {
+        return 1;
+    }
+
+    struct timeval timeout = {3, 0};
+    if (ping_send(sock, (struct sockaddr *)&sock_addr, sizeof( sock_addr ), 0) < 0) {
+        return 1;
+    }
+
+    struct sockaddr_in rcv_addr = {0};
+    socklen_t rcv_addr_len = sizeof rcv_addr;
+    int seq_no = 0;
+
+    if (ping_recv(sock, timeout, (struct sockaddr *)&rcv_addr, &rcv_addr_len, &seq_no) < 0) {
+        return 1;
+    }
+
+    char rcv_buf[2048];
+    memset(rcv_buf, 0, sizeof rcv_buf);
+    inet_ntop(AF_INET, &(rcv_addr.sin_addr), rcv_buf, rcv_addr_len);
+    printf("ICMP echo reply from %s, seq no %d\n", rcv_buf, seq_no);
+    return 0;
 }
 

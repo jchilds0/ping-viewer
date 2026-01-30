@@ -10,10 +10,9 @@ G_BEGIN_DECLS
 G_DECLARE_FINAL_TYPE (PingHost, ping_host, PING, HOST, GObject)
 
 PingHost *ping_host_new(void);
+void ping_update_hostname(PingHost* host);
+void ping_update_address(PingHost* host);
 
 G_END_DECLS
-
-char     *ping_host_get_hostname(PingHost *host);
-char     *ping_host_get_address(PingHost *host);
 
 #endif // PING_VIEWER_PING_HOST_H
