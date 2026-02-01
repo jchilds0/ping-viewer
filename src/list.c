@@ -20,19 +20,34 @@ static void hostname_activate_cb(GtkWidget *widget, gpointer data) {
     GtkListItem* list_item = data;
     PingHost* host = PING_HOST(gtk_list_item_get_item(list_item));
 
-    ping_update_address(host);
+    ping_host_update_address(host);
 }
 
 static void address_activate_cb(GtkWidget *widget, gpointer data) {
     GtkListItem* list_item = data;
     PingHost* host = PING_HOST(gtk_list_item_get_item(list_item));
 
-    ping_update_hostname(host);
+    ping_host_update_hostname(host);
 }
 
-LIST_INPUT_CB(name, "name", empty_cb);
-LIST_INPUT_CB(hostname, "hostname", hostname_activate_cb);
-LIST_INPUT_CB(address, "address", address_activate_cb);
+LIST_INPUT_CB(name, PROPERTY_NAME, empty_cb);
+LIST_INPUT_CB(hostname, PROPERTY_HOST_NAME, hostname_activate_cb);
+LIST_INPUT_CB(address, PROPERTY_ADDRESS, address_activate_cb);
+LIST_TEXT_CB(succeed_count, PROPERTY_SUCCEEDED_COUNT);
+LIST_TEXT_CB(failed_count, PROPERTY_FAILED_COUNT);
+LIST_TEXT_CB(consecutive_failed_count, PROPERTY_CONSECUTIVE_FAILED_COUNT);
+LIST_TEXT_CB(max_consecutive_failed_count, PROPERTY_MAX_CONSECUTIVE_FAILED_COUNT);
+LIST_TEXT_CB(max_consecutive_failed_time, PROPERTY_MAX_CONSECUTIVE_FAILED_TIME);
+LIST_TEXT_CB(total_ping_count, PROPERTY_TOTAL_PING_COUNT);
+LIST_TEXT_CB(percentage_failed, PROPERTY_PERCENTAGE_FAILED);
+LIST_TEXT_CB(last_ping_status, PROPERTY_LAST_PING_STATUS);
+LIST_TEXT_CB(last_ping_time, PROPERTY_LAST_PING_TIME);
+LIST_TEXT_CB(last_ping_ttl, PROPERTY_LAST_PING_TTL);
+LIST_TEXT_CB(avg_ping_time, PROPERTY_AVERAGE_PING_TIME);
+LIST_TEXT_CB(last_succeeded_on, PROPERTY_LAST_SUCCEEDED_ON);
+LIST_TEXT_CB(last_failed_on, PROPERTY_LAST_FAILED_ON);
+LIST_TEXT_CB(min_ping_time, PROPERTY_MINIMUM_PING_TIME);
+LIST_TEXT_CB(max_ping_time, PROPERTY_MAXIMUM_PING_TIME);
 
 void ping_list_add_host(GtkWidget *widget, gpointer data) {
     g_return_if_fail(data != NULL);
@@ -56,6 +71,21 @@ GtkWidget *ping_create_host_list() {
     LIST_ADD_COLUMN(column_view, "Name", name);
     LIST_ADD_COLUMN(column_view, "Host Name", hostname);
     LIST_ADD_COLUMN(column_view, "Address", address);
+    LIST_ADD_COLUMN(column_view, "Succeeded Count", succeed_count);
+    LIST_ADD_COLUMN(column_view, "Failed Count", failed_count);
+    LIST_ADD_COLUMN(column_view, "Consecutive Failed Count", consecutive_failed_count);
+    LIST_ADD_COLUMN(column_view, "Max Consecutive Failed Count", max_consecutive_failed_count);
+    LIST_ADD_COLUMN(column_view, "Max Consecutive Failed Time", max_consecutive_failed_time);
+    LIST_ADD_COLUMN(column_view, "Total Ping Count", total_ping_count);
+    LIST_ADD_COLUMN(column_view, "Percentage Failed", percentage_failed);
+    LIST_ADD_COLUMN(column_view, "Last Ping Status", last_ping_status);
+    LIST_ADD_COLUMN(column_view, "Last Ping Time", last_ping_time);
+    LIST_ADD_COLUMN(column_view, "Last Ping TTL", last_ping_ttl);
+    LIST_ADD_COLUMN(column_view, "Average Ping Time", avg_ping_time);
+    LIST_ADD_COLUMN(column_view, "Last Succeeded On", last_succeeded_on);
+    LIST_ADD_COLUMN(column_view, "Last Failed On", last_failed_on);
+    LIST_ADD_COLUMN(column_view, "Minimum Ping Time", min_ping_time);
+    LIST_ADD_COLUMN(column_view, "Maximum Ping Time", max_ping_time);
 
     return column_view;
 }
