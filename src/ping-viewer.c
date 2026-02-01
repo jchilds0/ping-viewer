@@ -6,6 +6,7 @@
 #include <glib-object.h>
 #include <gtk/gtk.h>
 
+#include "gdk-pixbuf/gdk-pixbuf.h"
 #include "gdk/gdk.h"
 #include "gio/gio.h"
 #include "glib.h"
@@ -29,10 +30,15 @@ static void activate(GtkApplication* app, gpointer user_data) {
     gtk_box_append(GTK_BOX(box), taskbar);
     gtk_widget_set_name(taskbar, "taskbar");
 
-    GtkWidget *button_add_host = gtk_button_new();
-    gtk_button_set_label(GTK_BUTTON(button_add_host), "add host");
+    GtkWidget* button_add_host = gtk_button_new_from_icon_name("list-add");
+    gtk_widget_set_name(button_add_host, "add-ping-host");
     g_signal_connect(button_add_host, "clicked", G_CALLBACK(ping_list_add_host), list_host);
     gtk_box_append(GTK_BOX(taskbar), button_add_host);
+
+    GtkWidget *button_remove_host = gtk_button_new_from_icon_name("list-remove");
+    gtk_widget_set_name(button_remove_host, "remove-ping-host");
+    g_signal_connect(button_remove_host, "clicked", G_CALLBACK(ping_list_remove_host), list_host);
+    gtk_box_append(GTK_BOX(taskbar), button_remove_host);
 
     /* host list */
     GtkWidget* scroll_window = gtk_scrolled_window_new();

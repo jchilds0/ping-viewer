@@ -53,6 +53,7 @@
     }
 
 void ping_list_add_host(GtkWidget* widget, gpointer data);
+void ping_list_remove_host(GtkWidget *widget, gpointer data);
 GtkWidget* ping_create_host_list();
 
 #endif // !PING_VIEWER_LIST_H

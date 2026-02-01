@@ -2,10 +2,10 @@ project('ping-viewer', 'c')
 
 gtkdep = dependency('gtk4')
 sources = files(
-  'src/main.c',
+  'src/ping-viewer.c',
   'src/list.c',
   'src/ping-host.c',
   'src/ping.c'
 )
 
-executable('demo', sources, dependencies : gtkdep)
+executable('ping-viewer', sources, dependencies : gtkdep)

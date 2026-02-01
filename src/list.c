@@ -9,6 +9,9 @@
 #include <gtk/gtk.h>
 #include <glib.h>
 
+#include "gio/gio.h"
+#include "gtk/gtkshortcut.h"
+#include "gtk/gtksingleselection.h"
 #include "ping-host.h"
 
 static void empty_cb(GtkWidget* widget, gpointer data) {}
@@ -55,8 +58,17 @@ void ping_list_add_host(GtkWidget *widget, gpointer data) {
 
     PingHost* host = g_object_new(PING_TYPE_HOST, NULL);
     g_list_store_append(G_LIST_STORE(list_model), host);
+}
 
-    return;
+void ping_list_remove_host(GtkWidget *widget, gpointer data) {
+    g_return_if_fail(data != NULL);
+
+    GtkWidget* column_view = data;
+    GtkSelectionModel* model = gtk_column_view_get_model(GTK_COLUMN_VIEW(column_view));
+    GListModel* list_model = gtk_single_selection_get_model(GTK_SINGLE_SELECTION(model));
+
+    guint selected = gtk_single_selection_get_selected(GTK_SINGLE_SELECTION(model));
+    g_list_store_remove(G_LIST_STORE(list_model), selected);
 }
 
 GtkWidget *ping_create_host_list() {

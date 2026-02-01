@@ -72,6 +72,7 @@ struct _PingHost {
     gchar* min_ping_time;
     gchar* max_ping_time;
 
+    gint exit;
     GArray* pings;
     GThread* thread;
     GRWLock lock;
@@ -83,13 +84,16 @@ static GParamSpec *obj_properties[N_PROPERTIES] = {NULL,};
 
 G_DEFINE_TYPE (PingHost, ping_host, G_TYPE_OBJECT)
 
+static void ping_host_dispose(GObject* self);
 static void ping_host_set_property(GObject* obj, guint prop_id, const GValue *value, GParamSpec *spec);
-static void ping_host_get_property(GObject *obj, guint prop_id, GValue *value, GParamSpec *spec);
+static void ping_host_get_property(GObject* obj, guint prop_id, GValue *value, GParamSpec *spec);
 
 static gpointer ping_host_loop(gpointer data);
 
 static void ping_host_class_init(PingHostClass *class) {
     GObjectClass *object_class = G_OBJECT_CLASS(class);
+
+    object_class->dispose      = ping_host_dispose;
 
     object_class->set_property = ping_host_set_property;
     object_class->get_property = ping_host_get_property;
@@ -176,13 +180,21 @@ static void ping_host_class_init(PingHostClass *class) {
     g_object_class_install_properties(object_class, N_PROPERTIES, obj_properties);
 }
 
-static void ping_host_init(PingHost *self) {
+static void ping_host_init(PingHost* self) {
     g_rw_lock_init(&self->lock);
 
     self->thread = g_thread_new("ping-host", ping_host_loop, self);
     self->pings = g_array_new(false, true, sizeof( ping_t ));
 }
 
+static void ping_host_dispose(GObject* self) {
+    PingHost* host = PING_HOST(self);
+    g_atomic_int_set(&host->exit, 1);
+    g_thread_join(host->thread);
+    g_rw_lock_clear(&host->lock);
+
+    G_OBJECT_CLASS (ping_host_parent_class)->dispose(self);
+}
 static void ping_host_set_property(GObject* obj, guint prop_id, const GValue *value, GParamSpec *spec) {
     PingHost* self = PING_HOST(obj);
 
@@ -458,7 +470,7 @@ static gpointer ping_host_loop(gpointer data) {
     g_return_val_if_fail(data != NULL, NULL);
     PingHost* host = data;
 
-    while (true) {
+    while (!g_atomic_int_get(&host->exit)) {
         int64_t ping_count = ping_host_get_integer(host, PROPERTY_TOTAL_PING_COUNT);
         ping_host_set_integer(host, PROPERTY_TOTAL_PING_COUNT, ping_count + 1);
 
