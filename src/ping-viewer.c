@@ -1,9 +1,16 @@
-#include <arpa/inet.h>
+/*
+ * ping-viewer.c 
+ *
+ */
 
-#include "glib-object.h"
-#include "gtk/gtk.h"
-#include "ping.h"
+#include <glib-object.h>
+#include <gtk/gtk.h>
+
+#include "gdk/gdk.h"
+#include "gio/gio.h"
+#include "glib.h"
 #include "list.h"
+#include "ping-viewer.h"
 
 static void activate(GtkApplication* app, gpointer user_data) {
     GtkWidget *window;
@@ -20,6 +27,7 @@ static void activate(GtkApplication* app, gpointer user_data) {
 
     /* taskbar */
     gtk_box_append(GTK_BOX(box), taskbar);
+    gtk_widget_set_name(taskbar, "taskbar");
 
     GtkWidget *button_add_host = gtk_button_new();
     gtk_button_set_label(GTK_BUTTON(button_add_host), "add host");
@@ -33,6 +41,20 @@ static void activate(GtkApplication* app, gpointer user_data) {
     gtk_widget_set_hexpand(scroll_window, true);
 
     gtk_box_append(GTK_BOX(box), scroll_window);
+
+    /* load css */
+    gchar* css_path = g_strdup_printf("%s/%s", g_get_user_config_dir(), PING_VIEWER_CSS_FILE);
+    GFile* file = g_file_new_for_path(css_path);
+    if (g_file_query_exists(file, NULL)) {
+        GtkCssProvider* css_provider = gtk_css_provider_new();
+        GdkDisplay* display = gdk_display_get_default();
+
+        gtk_style_context_add_provider_for_display(display, GTK_STYLE_PROVIDER(css_provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+        gtk_css_provider_load_from_file(css_provider, file);
+
+        g_object_unref(css_provider);
+        g_free(css_path);
+    }
 
     gtk_window_present(GTK_WINDOW(window));
 } 

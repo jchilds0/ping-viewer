@@ -4,15 +4,12 @@
  * Widget containing a list of hosts to ping.
  */
 
-#include <gtk/gtk.h>
-
-#include "gio/gio.h"
-#include "glib-object.h"
-#include "glib.h"
-
-#include "gtk/gtkshortcut.h"
-#include "ping-host.h"
 #include "list.h"
+
+#include <gtk/gtk.h>
+#include <glib.h>
+
+#include "ping-host.h"
 
 static void empty_cb(GtkWidget* widget, gpointer data) {}
 
@@ -67,6 +64,10 @@ GtkWidget *ping_create_host_list() {
 
     GtkSingleSelection* model = gtk_single_selection_new(G_LIST_MODEL(list));
     GtkWidget* column_view = gtk_column_view_new(GTK_SELECTION_MODEL(model));
+
+    gtk_widget_set_name(column_view, "list");
+    gtk_column_view_set_reorderable(GTK_COLUMN_VIEW(column_view), true);
+    gtk_column_view_set_show_row_separators(GTK_COLUMN_VIEW(column_view), true);
 
     LIST_ADD_COLUMN(column_view, "Name", name);
     LIST_ADD_COLUMN(column_view, "Host Name", hostname);

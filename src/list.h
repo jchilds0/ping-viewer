@@ -48,6 +48,7 @@
         g_signal_connect(factory, "bind", G_CALLBACK(bind_listitem_##column_name##_cb), NULL); \
         GtkColumnViewColumn *col_view_c = gtk_column_view_column_new(column, factory); \
         gtk_column_view_column_set_expand(col_view_c, true); \
+        gtk_column_view_column_set_resizable(col_view_c, true); \
         gtk_column_view_append_column(GTK_COLUMN_VIEW(col_view), col_view_c); \
     }
 
