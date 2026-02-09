@@ -33,6 +33,7 @@ static void address_activate_cb(GtkWidget *widget, gpointer data) {
 LIST_INPUT_CB(name, PROPERTY_NAME, empty_cb);
 LIST_INPUT_CB(hostname, PROPERTY_HOST_NAME, hostname_activate_cb);
 LIST_INPUT_CB(address, PROPERTY_ADDRESS, address_activate_cb);
+LIST_TEXT_CB(reply_address, PROPERTY_REPLY_ADDRESS);
 LIST_TEXT_CB(succeed_count, PROPERTY_SUCCEEDED_COUNT);
 LIST_TEXT_CB(failed_count, PROPERTY_FAILED_COUNT);
 LIST_TEXT_CB(consecutive_failed_count, PROPERTY_CONSECUTIVE_FAILED_COUNT);
@@ -84,6 +85,7 @@ GtkWidget *ping_create_host_list() {
     LIST_ADD_COLUMN(column_view, "Name", name);
     LIST_ADD_COLUMN(column_view, "Host Name", hostname);
     LIST_ADD_COLUMN(column_view, "Address", address);
+    LIST_ADD_COLUMN(column_view, "Reply Address", reply_address);
     LIST_ADD_COLUMN(column_view, "Succeeded Count", succeed_count);
     LIST_ADD_COLUMN(column_view, "Failed Count", failed_count);
     LIST_ADD_COLUMN(column_view, "Consecutive Failed Count", consecutive_failed_count);

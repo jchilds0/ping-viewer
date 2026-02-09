@@ -10,6 +10,7 @@
 #include "glib-object.h"
 #include "glib.h"
 
+#include <errno.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <sys/socket.h>
@@ -25,6 +26,7 @@
 
 #define PING_FREQUENCY      10
 #define PING_TIMEOUT        1000
+#define BUFSIZE             2048
 
 typedef enum {
     PROP_NAME = 1,
@@ -77,6 +79,7 @@ struct _PingHost {
     GThread* thread;
     GRWLock lock;
 
+    struct timeval timeout;
     struct sockaddr_in addr_in;
 };
 
@@ -183,6 +186,7 @@ static void ping_host_class_init(PingHostClass *class) {
 static void ping_host_init(PingHost* self) {
     g_rw_lock_init(&self->lock);
 
+    self->timeout = (struct timeval){3, 0};
     self->thread = g_thread_new("ping-host", ping_host_loop, self);
     self->pings = g_array_new(false, true, sizeof( ping_t ));
 }
@@ -469,10 +473,51 @@ void ping_host_update_address(PingHost* host) {
 static gpointer ping_host_loop(gpointer data) {
     g_return_val_if_fail(data != NULL, NULL);
     PingHost* host = data;
+    int seq_no = 0;
 
-    while (!g_atomic_int_get(&host->exit)) {
+    int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
+    if (sock < 0) {
+        perror("socket");
+        ping_host_set_string(host, PROPERTY_LAST_PING_STATUS, "error creating socket");
+        return NULL;
+    }
+
+    while (!g_atomic_int_get(&host->exit)) {        
         int64_t ping_count = ping_host_get_integer(host, PROPERTY_TOTAL_PING_COUNT);
+        int64_t succ_count = ping_host_get_integer(host, PROPERTY_SUCCEEDED_COUNT);
+        int64_t fail_count = ping_host_get_integer(host, PROPERTY_FAILED_COUNT);
+
+        int status;
+        status = ping_send(sock, (struct sockaddr *)&host->addr_in, sizeof( host->addr_in ), seq_no);
+        if (status <= 0) {
+            ping_host_set_string(host, PROPERTY_LAST_PING_STATUS, strerror(errno));
+            fail_count++;
+            goto END_PING;
+        }
+
+        struct sockaddr_in rcv_addr = {0};
+        socklen_t rcv_addr_len = sizeof rcv_addr;
+        int seq_no = 0;
+
+        status = ping_recv(sock, host->timeout, (struct sockaddr *)&rcv_addr, &rcv_addr_len, &seq_no);
+        if (status < 0) {
+            ping_host_set_string(host, PROPERTY_LAST_PING_STATUS, strerror(errno));
+            fail_count++;
+            goto END_PING;
+        }
+
+        char rcv_buf[2048];
+        memset(rcv_buf, 0, sizeof rcv_buf);
+        inet_ntop(AF_INET, &(rcv_addr.sin_addr), rcv_buf, rcv_addr_len);
+        succ_count++;
+
+        ping_host_set_string(host, PROPERTY_LAST_PING_STATUS, "succeeded");
+        ping_host_set_string(host, PROPERTY_REPLY_ADDRESS, rcv_buf);
+
+END_PING:
         ping_host_set_integer(host, PROPERTY_TOTAL_PING_COUNT, ping_count + 1);
+        ping_host_set_integer(host, PROPERTY_SUCCEEDED_COUNT, succ_count);
+        ping_host_set_integer(host, PROPERTY_FAILED_COUNT, fail_count);
 
         g_usleep(PING_FREQUENCY * G_USEC_PER_SEC);
     }

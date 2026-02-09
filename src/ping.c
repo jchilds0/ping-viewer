@@ -38,13 +38,7 @@ int ping_send(int sock, struct sockaddr *addr, int addr_len, int seq_no) {
     icmp_hdr.un.echo.sequence = seq_no;
     memcpy(data, &icmp_hdr, sizeof icmp_hdr);
 
-    int rc = sendto(sock, data, sizeof icmp_hdr, 0, addr, addr_len);
-    if (rc <= 0) {
-        perror("ping send");
-        return -1;
-    }
-
-    return 0;
+    return sendto(sock, data, sizeof icmp_hdr, 0, addr, addr_len);
 }
 
 int ping_recv(int sock, struct timeval timeout, struct sockaddr *rcv_addr, socklen_t *rcv_addr_len, int *seq_no) {
@@ -56,18 +50,13 @@ int ping_recv(int sock, struct timeval timeout, struct sockaddr *rcv_addr, sockl
 
     // wait for a reply with a timeout
     int rc = select(sock + 1, &read_set, NULL, NULL, &timeout);
-    if (rc == 0) {
-        puts("Got no reply\n");
-        return -1;
-    } else if (rc < 0) {
-        perror("Select");
+    if (rc <= 0) {
         return -1;
     }
 
     struct icmphdr rcv_hdr;
     rc = recvfrom(sock, data, sizeof data, 0, rcv_addr, rcv_addr_len);
     if (rc <= 0) {
-        perror("recvfrom");
         return -1;
     } else if (rc < sizeof rcv_hdr) {
         printf("Error, got short ICMP packet, %d bytes\n", rc);
@@ -77,7 +66,6 @@ int ping_recv(int sock, struct timeval timeout, struct sockaddr *rcv_addr, sockl
     memcpy(&rcv_hdr, data, sizeof rcv_hdr);
     if (rcv_hdr.type == ICMP_ECHOREPLY) {
         *seq_no = rcv_hdr.un.echo.sequence;
-        printf("ICMP reply, id=0x%x, sequence =  0x%x\n", rcv_hdr.un.echo.id, rcv_hdr.un.echo.sequence);
         return 0;
     } else {
         printf("Got ICMP packet with type 0x%x ?!?\n", rcv_hdr.type);
