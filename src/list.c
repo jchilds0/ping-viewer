@@ -6,13 +6,12 @@
 
 #include "list.h"
 
-#include <gtk/gtk.h>
-#include <glib.h>
-
 #include "gio/gio.h"
-#include "gtk/gtkshortcut.h"
-#include "gtk/gtksingleselection.h"
-#include "ping-host.h"
+#include "glib-object.h"
+#include "glib.h"
+#include "host.h"
+
+#define PING_INTERVAL         (3 * 1000)
 
 static void empty_cb(GtkWidget* widget, gpointer data) {}
 
@@ -72,6 +71,25 @@ void ping_list_remove_host(GtkWidget *widget, gpointer data) {
     g_list_store_remove(G_LIST_STORE(list_model), selected);
 }
 
+static gboolean ping_list_ping_hosts(gpointer data) {
+    g_return_val_if_fail(data != NULL, G_SOURCE_REMOVE);
+
+    GtkWidget* column_view = data;
+    GtkSelectionModel* model = gtk_column_view_get_model(GTK_COLUMN_VIEW(column_view));
+    GListModel* list_model = gtk_single_selection_get_model(GTK_SINGLE_SELECTION(model));
+
+    for (size_t i = 0; i < g_list_model_get_n_items(list_model); i++) {
+        gpointer item = g_list_model_get_item(list_model, i);
+        PingHost* host = PING_HOST(item);
+
+        GTask* task = g_task_new(host, NULL, ping_host_update_cb, host);
+        g_task_run_in_thread(task, ping_host_thread);
+        g_object_unref(task);
+    }
+
+    return G_SOURCE_CONTINUE;
+}
+
 GtkWidget *ping_create_host_list() {
     GListStore* list = g_list_store_new(PING_TYPE_HOST);
 
@@ -102,5 +120,6 @@ GtkWidget *ping_create_host_list() {
     LIST_ADD_COLUMN(column_view, "Minimum Ping Time", min_ping_time);
     LIST_ADD_COLUMN(column_view, "Maximum Ping Time", max_ping_time);
 
+    g_timeout_add(PING_INTERVAL, ping_list_ping_hosts, column_view);
     return column_view;
 }

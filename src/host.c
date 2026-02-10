@@ -5,27 +5,18 @@
  * a host to ping.
  */
 
-#include "ping-host.h"
+#include "host.h"
 
+#include <netdb.h>
+#include <stdio.h>
+#include <arpa/inet.h>
+
+#include "gio/gio.h"
 #include "glib-object.h"
 #include "glib.h"
-
-#include <errno.h>
-#include <stdbool.h>
-#include <stdint.h>
-#include <sys/socket.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <stdio.h>
-#include <string.h>
-#include <netinet/ip_icmp.h>
-#include <arpa/inet.h>
-#include <sys/socket.h>
-
 #include "ping.h"
+#include "src/ping-viewer.h"
 
-#define PING_FREQUENCY      10
-#define PING_TIMEOUT        1000
 #define BUFSIZE             2048
 
 typedef enum {
@@ -54,6 +45,11 @@ typedef enum {
 struct _PingHost {
     GObject parent_instance;
 
+    struct {
+        bool last_ping_succeeded;
+        int64_t ping_time_sum;
+    } internal;
+
     gchar* name;
     gchar* hostname;
     gchar* addr;
@@ -73,30 +69,17 @@ struct _PingHost {
     gchar* last_failed_on;
     gchar* min_ping_time;
     gchar* max_ping_time;
-
-    gint exit;
-    GArray* pings;
-    GThread* thread;
-    GRWLock lock;
-
-    struct timeval timeout;
-    struct sockaddr_in addr_in;
 };
 
 static GParamSpec *obj_properties[N_PROPERTIES] = {NULL,};
 
 G_DEFINE_TYPE (PingHost, ping_host, G_TYPE_OBJECT)
 
-static void ping_host_dispose(GObject* self);
 static void ping_host_set_property(GObject* obj, guint prop_id, const GValue *value, GParamSpec *spec);
 static void ping_host_get_property(GObject* obj, guint prop_id, GValue *value, GParamSpec *spec);
 
-static gpointer ping_host_loop(gpointer data);
-
 static void ping_host_class_init(PingHostClass *class) {
     GObjectClass *object_class = G_OBJECT_CLASS(class);
-
-    object_class->dispose      = ping_host_dispose;
 
     object_class->set_property = ping_host_set_property;
     object_class->get_property = ping_host_get_property;
@@ -183,26 +166,10 @@ static void ping_host_class_init(PingHostClass *class) {
     g_object_class_install_properties(object_class, N_PROPERTIES, obj_properties);
 }
 
-static void ping_host_init(PingHost* self) {
-    g_rw_lock_init(&self->lock);
+static void ping_host_init(PingHost* self) {}
 
-    self->timeout = (struct timeval){3, 0};
-    self->thread = g_thread_new("ping-host", ping_host_loop, self);
-    self->pings = g_array_new(false, true, sizeof( ping_t ));
-}
-
-static void ping_host_dispose(GObject* self) {
-    PingHost* host = PING_HOST(self);
-    g_atomic_int_set(&host->exit, 1);
-    g_thread_join(host->thread);
-    g_rw_lock_clear(&host->lock);
-
-    G_OBJECT_CLASS (ping_host_parent_class)->dispose(self);
-}
 static void ping_host_set_property(GObject* obj, guint prop_id, const GValue *value, GParamSpec *spec) {
     PingHost* self = PING_HOST(obj);
-
-    g_rw_lock_writer_lock(&self->lock);
 
     switch ((PingHostProperty) prop_id) {
     case PROP_NAME:
@@ -297,14 +264,10 @@ static void ping_host_set_property(GObject* obj, guint prop_id, const GValue *va
         G_OBJECT_WARN_INVALID_PROPERTY_ID (obj, prop_id, spec);
         break;
     }
-
-    g_rw_lock_writer_unlock(&self->lock);
 }
 
 static void ping_host_get_property(GObject *obj, guint prop_id, GValue *value, GParamSpec *spec) {
     PingHost *self = PING_HOST(obj);
-
-    g_rw_lock_reader_lock(&self->lock);
 
     switch ((PingHostProperty) prop_id) {
     case PROP_NAME:
@@ -387,8 +350,6 @@ static void ping_host_get_property(GObject *obj, guint prop_id, GValue *value, G
         G_OBJECT_WARN_INVALID_PROPERTY_ID (obj, prop_id, spec);
         break;
     }
-
-    g_rw_lock_reader_unlock(&self->lock);
 }
 
 void ping_host_set_integer(PingHost* host, const char* prop_name, int64_t value) {
@@ -421,23 +382,25 @@ void ping_host_set_string(PingHost* host, const gchar* prop_name, const gchar* v
 }
 
 void ping_host_update_hostname(PingHost* host) {
+    char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
+    struct sockaddr_in addr_in = {0};
+    struct in_addr _in_addr;
     int s;
 
-    struct in_addr _in_addr;
     if (inet_pton(AF_INET, host->addr, &_in_addr) == 0) {
         printf("%s isn't a valid IP address\n", host->addr);
         return;
     }
 
-    memset(&host->addr_in, 0, sizeof( host->addr_in ));
-    host->addr_in.sin_family = AF_INET;
-    host->addr_in.sin_addr = _in_addr;
+    addr_in.sin_family = AF_INET;
+    addr_in.sin_addr = _in_addr;
 
-    struct sockaddr* addr = (struct sockaddr*)&host->addr_in;
-    socklen_t addrlen = sizeof( host->addr_in );
-    char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
-
-    s = getnameinfo(addr, addrlen, hbuf, sizeof(hbuf), sbuf, sizeof(sbuf), NI_NUMERICHOST | NI_NUMERICSERV);
+    s = getnameinfo(
+        (struct sockaddr *)&addr_in, sizeof( addr_in ), 
+        hbuf, sizeof(hbuf), 
+        sbuf, sizeof(sbuf), 
+        NI_NUMERICHOST | NI_NUMERICSERV
+    );
     if (s != 0) {
         fprintf(stderr, "getnameinfo: %s\n", gai_strerror(s));
         return;
@@ -466,61 +429,124 @@ void ping_host_update_address(PingHost* host) {
         return;
     }
 
-    host->addr_in = *(struct sockaddr_in *)result[0].ai_addr;
-    ping_host_set_string(host, "address", inet_ntoa(host->addr_in.sin_addr));
+    struct sockaddr_in *sin_addr = (struct sockaddr_in *)result[0].ai_addr;
+    ping_host_set_string(host, "address", inet_ntoa(sin_addr->sin_addr));
 }
 
-static gpointer ping_host_loop(gpointer data) {
-    g_return_val_if_fail(data != NULL, NULL);
-    PingHost* host = data;
-    int seq_no = 0;
+void ping_host_thread(GTask* task, gpointer source_object, 
+                      gpointer task_data, GCancellable* cancellable) {
+    PingHost* host = PING_HOST(source_object);
+    ping_t* ping = g_malloc0(sizeof( ping_t ));
+    int sock, status, seq_no = 0;
 
-    int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
-    if (sock < 0) {
-        perror("socket");
-        ping_host_set_string(host, PROPERTY_LAST_PING_STATUS, "error creating socket");
-        return NULL;
+    struct timeval timeout = {3, 0};
+    struct sockaddr_in addr_in = {0}, rcv_addr = {0};
+    socklen_t rcv_addr_len = sizeof rcv_addr;
+    char rcv_buf[2048];
+
+    sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
+    if (socket < 0) {
+        ping->msg = g_strdup("invalid internal socket");
+        ping->succeeded = false;
+        g_task_return_pointer(task, ping, ping_free);
+        return;
     }
 
-    while (!g_atomic_int_get(&host->exit)) {        
-        int64_t ping_count = ping_host_get_integer(host, PROPERTY_TOTAL_PING_COUNT);
-        int64_t succ_count = ping_host_get_integer(host, PROPERTY_SUCCEEDED_COUNT);
-        int64_t fail_count = ping_host_get_integer(host, PROPERTY_FAILED_COUNT);
-
-        int status;
-        status = ping_send(sock, (struct sockaddr *)&host->addr_in, sizeof( host->addr_in ), seq_no);
-        if (status <= 0) {
-            ping_host_set_string(host, PROPERTY_LAST_PING_STATUS, strerror(errno));
-            fail_count++;
-            goto END_PING;
-        }
-
-        struct sockaddr_in rcv_addr = {0};
-        socklen_t rcv_addr_len = sizeof rcv_addr;
-        int seq_no = 0;
-
-        status = ping_recv(sock, host->timeout, (struct sockaddr *)&rcv_addr, &rcv_addr_len, &seq_no);
-        if (status < 0) {
-            ping_host_set_string(host, PROPERTY_LAST_PING_STATUS, strerror(errno));
-            fail_count++;
-            goto END_PING;
-        }
-
-        char rcv_buf[2048];
-        memset(rcv_buf, 0, sizeof rcv_buf);
-        inet_ntop(AF_INET, &(rcv_addr.sin_addr), rcv_buf, rcv_addr_len);
-        succ_count++;
-
-        ping_host_set_string(host, PROPERTY_LAST_PING_STATUS, "succeeded");
-        ping_host_set_string(host, PROPERTY_REPLY_ADDRESS, rcv_buf);
-
-END_PING:
-        ping_host_set_integer(host, PROPERTY_TOTAL_PING_COUNT, ping_count + 1);
-        ping_host_set_integer(host, PROPERTY_SUCCEEDED_COUNT, succ_count);
-        ping_host_set_integer(host, PROPERTY_FAILED_COUNT, fail_count);
-
-        g_usleep(PING_FREQUENCY * G_USEC_PER_SEC);
+    if (host->addr == NULL) {
+        ping->succeeded = false;
+        g_task_return_pointer(task, ping, ping_free);
+        return;
     }
 
-    return NULL;
+    addr_in.sin_family = AF_INET;
+    addr_in.sin_addr.s_addr = inet_addr(host->addr);
+
+    status = ping_send(sock, (struct sockaddr *)&addr_in, sizeof( addr_in ), seq_no);
+    if (status <= 0) {
+        ping->msg = g_strdup(strerror(errno));
+        ping->succeeded = false;
+        g_task_return_pointer(task, ping, ping_free);
+        return;
+    }
+
+    status = ping_recv(sock, timeout, (struct sockaddr *)&rcv_addr, &rcv_addr_len, &seq_no);
+    if (status < 0) {
+        ping->msg = g_strdup(strerror(errno));
+        ping->succeeded = false;
+        g_task_return_pointer(task, ping, ping_free);
+        return;
+    }
+
+    memset(rcv_buf, 0, sizeof rcv_buf);
+    inet_ntop(AF_INET, &(rcv_addr.sin_addr), rcv_buf, rcv_addr_len);
+
+    ping->msg = g_strdup("Succeeded");
+    ping->replay_addr = strdup(rcv_buf);
+    ping->succeeded = true;
+    g_task_return_pointer(task, ping, ping_free);
+}
+
+static gchar* current_time() {
+    GDateTime* now = g_date_time_new_now_local();
+
+    return g_strdup_printf("%04d-%02d-%02dT%02d:%02d:%02d", 
+        g_date_time_get_year(now),
+        g_date_time_get_month(now),
+        g_date_time_get_day_of_month(now),
+        g_date_time_get_hour(now),
+        g_date_time_get_minute(now),
+        g_date_time_get_second(now)
+    );
+}
+
+void ping_host_update_cb(GObject* source_object, GAsyncResult* res, gpointer data) {
+    PingHost* host = PING_HOST(source_object);
+    ping_t* ping;
+    gchar* now_str;
+
+    ping = g_task_propagate_pointer(G_TASK(res), NULL);
+    if (ping == NULL) {
+        ping_log("missing ping result");
+        return;
+    }
+
+    now_str = current_time();
+
+    ping_host_set_string(host, PROPERTY_REPLY_ADDRESS, ping->replay_addr);
+    ping_host_set_string(host, PROPERTY_LAST_PING_STATUS, ping->msg);
+    ping_host_set_string(host, PROPERTY_LAST_PING_TIME, now_str);
+
+    ping_host_set_integer(host, PROPERTY_SUCCEEDED_COUNT, host->succeeded_count + ping->succeeded);
+    ping_host_set_integer(host, PROPERTY_FAILED_COUNT, host->failed_count + !ping->succeeded);
+    ping_host_set_integer(host, PROPERTY_TOTAL_PING_COUNT, host->total_ping_count + 1);
+
+    GValue value_f = G_VALUE_INIT;
+    g_value_init(&value_f, G_TYPE_DOUBLE);
+    g_value_set_double(&value_f, (double)(host->failed_count * 100) / host->total_ping_count);
+
+    g_object_set_property(G_OBJECT(host), PROPERTY_PERCENTAGE_FAILED, &value_f);
+    g_value_unset(&value_f);
+
+    if (host->internal.last_ping_succeeded) {
+        ping_host_set_integer(host, PROPERTY_CONSECUTIVE_FAILED_COUNT, 0);
+    }
+
+    if (ping->succeeded) {
+        ping_host_set_string(host, PROPERTY_LAST_SUCCEEDED_ON, now_str);
+    } else {
+        ping_host_set_string(host, PROPERTY_LAST_FAILED_ON, now_str);
+    }
+
+    if (!host->internal.last_ping_succeeded && !ping->succeeded) {
+        ping_host_set_integer(host, PROPERTY_CONSECUTIVE_FAILED_COUNT, host->cons_failed_count + 1);
+
+        if (host->cons_failed_count > host->max_cons_failed_count) {
+            ping_host_set_integer(host, PROPERTY_MAX_CONSECUTIVE_FAILED_COUNT, host->cons_failed_count);
+            ping_host_set_string(host, PROPERTY_MAX_CONSECUTIVE_FAILED_TIME, now_str);
+        }
+    }
+
+    host->internal.last_ping_succeeded = ping->succeeded;
+
+    g_free(now_str);
 }

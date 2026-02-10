@@ -4,7 +4,7 @@ gtkdep = dependency('gtk4')
 sources = files(
   'src/ping-viewer.c',
   'src/list.c',
-  'src/ping-host.c',
+  'src/host.c',
   'src/ping.c'
 )
 

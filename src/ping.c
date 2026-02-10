@@ -107,3 +107,13 @@ int ping_loop(void) {
     return 0;
 }
 
+void ping_free(gpointer data) {
+    if (data == NULL) {
+        return;
+    }
+
+    ping_t* ping = data;
+    g_free(ping->msg);
+    g_free(ping->replay_addr);
+    g_free(ping);
+}

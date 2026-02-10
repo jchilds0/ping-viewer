@@ -2,6 +2,7 @@
 #ifndef PING_VIEWER_PING_HOST_H
 #define PING_VIEWER_PING_HOST_H
 
+#include "gio/gio.h"
 #include <glib-object.h>
 
 #define PROPERTY_NAME                            "name"
@@ -36,6 +37,8 @@ int64_t ping_host_get_integer(PingHost* host, const char* prop_name);
 void ping_host_set_integer(PingHost* host, const char* prop_name, int64_t value);
 void ping_host_update_hostname(PingHost* host);
 void ping_host_update_address(PingHost* host);
+void ping_host_update_cb(GObject* source_object, GAsyncResult* res, gpointer data);
+void ping_host_thread(GTask* task, gpointer source_object, gpointer task_data, GCancellable* cancellable);
 
 G_END_DECLS
 
