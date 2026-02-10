@@ -11,7 +11,7 @@
 #include "glib.h"
 #include "host.h"
 
-#define PING_INTERVAL         (3 * 1000)
+#define PING_INTERVAL         (10 * 1000)
 
 static void empty_cb(GtkWidget* widget, gpointer data) {}
 
@@ -19,26 +19,26 @@ static void hostname_activate_cb(GtkWidget *widget, gpointer data) {
     GtkListItem* list_item = data;
     PingHost* host = PING_HOST(gtk_list_item_get_item(list_item));
 
-    ping_host_update_address(host);
+    ping_host_cancel_current_ping(host);
     ping_host_reset_stats(host);
 
+    ping_host_update_address(host);
+
     /* run a ping task immediately */
-    GTask* task = g_task_new(host, NULL, ping_host_update_cb, host);
-    g_task_run_in_thread(task, ping_host_thread);
-    g_object_unref(task);
+    ping_host_ping_task(host);
 }
 
 static void address_activate_cb(GtkWidget *widget, gpointer data) {
     GtkListItem* list_item = data;
     PingHost* host = PING_HOST(gtk_list_item_get_item(list_item));
 
-    ping_host_update_hostname(host);
+    ping_host_cancel_current_ping(host);
     ping_host_reset_stats(host);
 
+    ping_host_update_hostname(host);
+
     /* run a ping task immediately */
-    GTask* task = g_task_new(host, NULL, ping_host_update_cb, host);
-    g_task_run_in_thread(task, ping_host_thread);
-    g_object_unref(task);
+    ping_host_ping_task(host);
 }
 
 LIST_INPUT_CB(name, PROPERTY_NAME, empty_cb);
@@ -98,9 +98,7 @@ static gboolean ping_list_ping_hosts(gpointer data) {
             continue;
         }
 
-        GTask* task = g_task_new(host, NULL, ping_host_update_cb, host);
-        g_task_run_in_thread(task, ping_host_thread);
-        g_object_unref(task);
+        ping_host_ping_task(host);
     }
 
     return G_SOURCE_CONTINUE;

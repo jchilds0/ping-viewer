@@ -39,9 +39,9 @@ void ping_host_set_integer(PingHost* host, const char* prop_name, int64_t value)
 void ping_host_reset_stats(PingHost* host);
 void ping_host_update_hostname(PingHost* host);
 void ping_host_update_address(PingHost* host);
-void ping_host_update_cb(GObject* source_object, GAsyncResult* res, gpointer data);
 bool ping_host_is_valid(PingHost* host);
-void ping_host_thread(GTask* task, gpointer source_object, gpointer task_data, GCancellable* cancellable);
+void ping_host_ping_task(PingHost* host);
+void ping_host_cancel_current_ping(PingHost* host);
 
 G_END_DECLS
 

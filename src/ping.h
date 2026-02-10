@@ -10,7 +10,7 @@ typedef struct ping_s {
     bool succeeded;
     int64_t ttl;
     gchar* msg;
-    gchar* replay_addr;
+    gchar* reply_addr;
 } ping_t;
 
 int ping_addr(const char *addr, int n, struct sockaddr_in *sock_addr);

@@ -10,6 +10,7 @@
 #include <netdb.h>
 #include <stdio.h>
 #include <arpa/inet.h>
+#include <string.h>
 
 #include "gio/gio.h"
 #include "glib-object.h"
@@ -44,6 +45,7 @@ typedef enum {
 
 struct _PingHost {
     GObject parent_instance;
+    GCancellable* cancel;
 
     struct {
         bool last_ping_succeeded;
@@ -459,11 +461,13 @@ void ping_host_update_address(PingHost* host) {
     ping_host_set_string(host, "address", inet_ntoa(sin_addr->sin_addr));
 }
 
-void ping_host_thread(GTask* task, gpointer source_object, 
-                      gpointer task_data, GCancellable* cancellable) {
+static void ping_host_thread(GTask* task, gpointer source_object, 
+                             gpointer task_data, GCancellable* cancellable) {
     PingHost* host = PING_HOST(source_object);
     ping_t* ping = g_malloc0(sizeof( ping_t ));
     int sock, status, seq_no = 0;
+
+    ping_log("[%s] icmp echo ping", host->addr);
 
     struct timeval timeout = {3, 0};
     struct sockaddr_in addr_in = {0}, rcv_addr = {0};
@@ -474,12 +478,16 @@ void ping_host_thread(GTask* task, gpointer source_object,
     if (socket < 0) {
         ping->msg = g_strdup("invalid internal socket");
         ping->succeeded = false;
+
+        ping_log("[%s] invalid internal socket", host->addr);
         g_task_return_pointer(task, ping, ping_free);
         return;
     }
 
     if (host->addr == NULL) {
         ping->succeeded = false;
+
+        ping_log("[%s] missing remote address", host->addr);
         g_task_return_pointer(task, ping, ping_free);
         return;
     }
@@ -491,6 +499,8 @@ void ping_host_thread(GTask* task, gpointer source_object,
     if (status <= 0) {
         ping->msg = g_strdup(strerror(errno));
         ping->succeeded = false;
+
+        ping_log("[%s] error receiving response: %s", host->addr, ping->msg);
         g_task_return_pointer(task, ping, ping_free);
         return;
     }
@@ -499,6 +509,8 @@ void ping_host_thread(GTask* task, gpointer source_object,
     if (status < 0) {
         ping->msg = g_strdup(strerror(errno));
         ping->succeeded = false;
+
+        ping_log("[%s] error receiving response: %s", host->addr, ping->msg);
         g_task_return_pointer(task, ping, ping_free);
         return;
     }
@@ -506,16 +518,21 @@ void ping_host_thread(GTask* task, gpointer source_object,
     memset(rcv_buf, 0, sizeof rcv_buf);
     inet_ntop(AF_INET, &(rcv_addr.sin_addr), rcv_buf, rcv_addr_len);
 
-    ping->msg = g_strdup("Succeeded");
-    ping->replay_addr = strdup(rcv_buf);
-    ping->succeeded = true;
-    g_task_return_pointer(task, ping, ping_free);
+    sleep(5);
+    if (g_task_set_return_on_cancel(task, FALSE)) {
+        ping->msg = g_strdup("Succeeded");
+        ping->reply_addr = strdup(rcv_buf);
+        ping->succeeded = true;
+
+        ping_log("[%s] received reply from %s", host->addr, ping->reply_addr);
+        g_task_return_pointer(task, ping, ping_free);
+    }
 }
 
 static gchar* current_time() {
-    GDateTime* now = g_date_time_new_now_local();
+    g_autofree GDateTime* now = g_date_time_new_now_local();
 
-    return g_strdup_printf("%04d-%02d-%02dT%02d:%02d:%02d", 
+    return g_strdup_printf(PING_TIME_FORMAT, 
         g_date_time_get_year(now),
         g_date_time_get_month(now),
         g_date_time_get_day_of_month(now),
@@ -525,11 +542,12 @@ static gchar* current_time() {
     );
 }
 
-void ping_host_update_cb(GObject* source_object, GAsyncResult* res, gpointer data) {
+static void ping_host_update_cb(GObject* source_object, GAsyncResult* res, gpointer data) {
     PingHost* host = PING_HOST(source_object);
     ping_t* ping;
     gchar* now_str;
 
+    ping_log("[%s] update ping stats", host->addr);
     ping = g_task_propagate_pointer(G_TASK(res), NULL);
     if (ping == NULL) {
         ping_log("missing ping result");
@@ -538,7 +556,7 @@ void ping_host_update_cb(GObject* source_object, GAsyncResult* res, gpointer dat
 
     now_str = current_time();
 
-    ping_host_set_string(host, PROPERTY_REPLY_ADDRESS, ping->replay_addr);
+    ping_host_set_string(host, PROPERTY_REPLY_ADDRESS, ping->reply_addr);
     ping_host_set_string(host, PROPERTY_LAST_PING_STATUS, ping->msg);
     ping_host_set_string(host, PROPERTY_LAST_PING_TIME, now_str);
 
@@ -575,4 +593,28 @@ void ping_host_update_cb(GObject* source_object, GAsyncResult* res, gpointer dat
     host->internal.last_ping_succeeded = ping->succeeded;
 
     g_free(now_str);
+}
+
+void ping_host_ping_task(PingHost* host) {
+    g_return_if_fail(host != NULL);
+
+    host->cancel = g_cancellable_new();
+    GTask* task = g_task_new(host, host->cancel, ping_host_update_cb, host);
+
+    ping_log("[%s] starting ping task", host->addr);
+    g_task_set_return_on_cancel(task, TRUE);
+    g_task_run_in_thread(task, ping_host_thread);
+    g_object_unref(task);
+}
+
+void ping_host_cancel_current_ping(PingHost* host) {
+    g_return_if_fail(host != NULL);
+
+    if (host->cancel == NULL) {
+        return;
+    }
+
+    ping_log("[%s] ping cancelled", host->addr);
+    g_cancellable_cancel(host->cancel);
+    g_object_unref(host->cancel);
 }

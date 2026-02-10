@@ -114,6 +114,6 @@ void ping_free(gpointer data) {
 
     ping_t* ping = data;
     g_free(ping->msg);
-    g_free(ping->replay_addr);
+    g_free(ping->reply_addr);
     g_free(ping);
 }

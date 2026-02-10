@@ -3,15 +3,10 @@
  *
  */
 
-#include <glib-object.h>
-#include <gtk/gtk.h>
+#include "ping-viewer.h"
 
-#include "gdk-pixbuf/gdk-pixbuf.h"
-#include "gdk/gdk.h"
-#include "gio/gio.h"
 #include "glib.h"
 #include "list.h"
-#include "ping-viewer.h"
 
 static void activate(GtkApplication* app, gpointer user_data) {
     GtkWidget *window;
@@ -80,4 +75,22 @@ int main(int argc, char **argv) {
     g_object_unref(app);
 
     return status;
+}
+
+void ping_log(const char* buf, ...) {
+    va_list argptr = {0};
+    va_start(argptr, buf);
+
+    g_autofree GDateTime* now = g_date_time_new_now_local();
+    g_autofree gchar* msg = g_strdup_vprintf(buf, argptr);
+
+    printf("[" PING_TIME_FORMAT "] %s\n", 
+        g_date_time_get_year(now),
+        g_date_time_get_month(now),
+        g_date_time_get_day_of_month(now),
+        g_date_time_get_hour(now),
+        g_date_time_get_minute(now),
+        g_date_time_get_second(now),
+        msg
+    );
 }
