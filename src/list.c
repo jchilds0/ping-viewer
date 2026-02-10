@@ -20,6 +20,12 @@ static void hostname_activate_cb(GtkWidget *widget, gpointer data) {
     PingHost* host = PING_HOST(gtk_list_item_get_item(list_item));
 
     ping_host_update_address(host);
+    ping_host_reset_stats(host);
+
+    /* run a ping task immediately */
+    GTask* task = g_task_new(host, NULL, ping_host_update_cb, host);
+    g_task_run_in_thread(task, ping_host_thread);
+    g_object_unref(task);
 }
 
 static void address_activate_cb(GtkWidget *widget, gpointer data) {
@@ -27,6 +33,12 @@ static void address_activate_cb(GtkWidget *widget, gpointer data) {
     PingHost* host = PING_HOST(gtk_list_item_get_item(list_item));
 
     ping_host_update_hostname(host);
+    ping_host_reset_stats(host);
+
+    /* run a ping task immediately */
+    GTask* task = g_task_new(host, NULL, ping_host_update_cb, host);
+    g_task_run_in_thread(task, ping_host_thread);
+    g_object_unref(task);
 }
 
 LIST_INPUT_CB(name, PROPERTY_NAME, empty_cb);
@@ -81,6 +93,10 @@ static gboolean ping_list_ping_hosts(gpointer data) {
     for (size_t i = 0; i < g_list_model_get_n_items(list_model); i++) {
         gpointer item = g_list_model_get_item(list_model, i);
         PingHost* host = PING_HOST(item);
+
+        if (!ping_host_is_valid(host)) {
+            continue;
+        }
 
         GTask* task = g_task_new(host, NULL, ping_host_update_cb, host);
         g_task_run_in_thread(task, ping_host_thread);

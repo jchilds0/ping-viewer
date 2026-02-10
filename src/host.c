@@ -409,6 +409,32 @@ void ping_host_update_hostname(PingHost* host) {
     ping_host_set_string(host, "hostname", hbuf);
 }
 
+bool ping_host_is_valid(PingHost* host) {
+    return host->addr != NULL;
+}
+
+void ping_host_reset_stats(PingHost* host) {
+    host->internal.last_ping_succeeded = false;
+    host->internal.ping_time_sum = 0;
+
+    ping_host_set_string(host, PROPERTY_REPLY_ADDRESS, "");
+    ping_host_set_string(host, PROPERTY_LAST_PING_STATUS, "");
+    ping_host_set_string(host, PROPERTY_LAST_PING_TIME, "");
+    ping_host_set_string(host, PROPERTY_LAST_SUCCEEDED_ON, "");
+    ping_host_set_string(host, PROPERTY_LAST_FAILED_ON, "");
+
+    ping_host_set_integer(host, PROPERTY_SUCCEEDED_COUNT, 0);
+    ping_host_set_integer(host, PROPERTY_FAILED_COUNT, 0);
+    ping_host_set_integer(host, PROPERTY_CONSECUTIVE_FAILED_COUNT, 0);
+    ping_host_set_integer(host, PROPERTY_MAX_CONSECUTIVE_FAILED_COUNT, 0);
+    ping_host_set_integer(host, PROPERTY_TOTAL_PING_COUNT, 0);
+    ping_host_set_integer(host, PROPERTY_PERCENTAGE_FAILED, 0);
+    ping_host_set_integer(host, PROPERTY_LAST_PING_TTL, 0);
+    ping_host_set_integer(host, PROPERTY_AVERAGE_PING_TIME, 0);
+    ping_host_set_integer(host, PROPERTY_MINIMUM_PING_TIME, 0);
+    ping_host_set_integer(host, PROPERTY_MAXIMUM_PING_TIME, 0);
+}
+
 void ping_host_update_address(PingHost* host) {
     int s;
     struct addrinfo hints;
