@@ -168,7 +168,9 @@ static void ping_host_class_init(PingHostClass *class) {
     g_object_class_install_properties(object_class, N_PROPERTIES, obj_properties);
 }
 
-static void ping_host_init(PingHost* self) {}
+static void ping_host_init(PingHost* self) {
+    self->name = g_strdup("");
+}
 
 static void ping_host_set_property(GObject* obj, guint prop_id, const GValue *value, GParamSpec *spec) {
     PingHost* self = PING_HOST(obj);
@@ -544,13 +546,21 @@ static gchar* current_time() {
 
 static void ping_host_update_cb(GObject* source_object, GAsyncResult* res, gpointer data) {
     PingHost* host = PING_HOST(source_object);
+    GError* error = NULL;
     ping_t* ping;
     gchar* now_str;
 
     ping_log("[%s] update ping stats", host->addr);
-    ping = g_task_propagate_pointer(G_TASK(res), NULL);
+
+    ping = g_task_propagate_pointer(G_TASK(res), &error);
     if (ping == NULL) {
-        ping_log("missing ping result");
+        if (error->domain == G_IO_ERROR && error->code == G_IO_ERROR_CANCELLED) {
+            ping_log("[%s] ping cancelled", host->name);
+        } else {
+            ping_log("[%s] task error: %s", host->name, error->message);
+        }
+
+        g_error_free(error);
         return;
     }
 
@@ -592,11 +602,16 @@ static void ping_host_update_cb(GObject* source_object, GAsyncResult* res, gpoin
 
     host->internal.last_ping_succeeded = ping->succeeded;
 
+    ping_free(ping);
     g_free(now_str);
 }
 
 void ping_host_ping_task(PingHost* host) {
     g_return_if_fail(host != NULL);
+
+    if (host->cancel != NULL) {
+        g_object_unref(host->cancel);
+    }
 
     host->cancel = g_cancellable_new();
     GTask* task = g_task_new(host, host->cancel, ping_host_update_cb, host);
@@ -616,5 +631,4 @@ void ping_host_cancel_current_ping(PingHost* host) {
 
     ping_log("[%s] ping cancelled", host->addr);
     g_cancellable_cancel(host->cancel);
-    g_object_unref(host->cancel);
 }
