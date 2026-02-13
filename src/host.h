@@ -2,7 +2,6 @@
 #ifndef PING_VIEWER_PING_HOST_H
 #define PING_VIEWER_PING_HOST_H
 
-#include "gio/gio.h"
 #include <glib-object.h>
 #include <stdbool.h>
 
@@ -40,6 +39,7 @@ void ping_host_reset_stats(PingHost* host);
 void ping_host_update_hostname(PingHost* host);
 void ping_host_update_address(PingHost* host);
 bool ping_host_is_valid(PingHost* host);
+bool ping_host_last_ping(PingHost* host);
 void ping_host_ping_task(PingHost* host);
 void ping_host_cancel_current_ping(PingHost* host);
 

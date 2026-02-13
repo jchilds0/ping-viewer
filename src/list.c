@@ -6,9 +6,12 @@
 
 #include "list.h"
 
+#include "cairo.h"
+#include "gdk/gdk.h"
 #include "gio/gio.h"
 #include "glib-object.h"
 #include "glib.h"
+#include "gtk/gtk.h"
 #include "host.h"
 
 #define PING_INTERVAL         (10 * 1000)
@@ -60,6 +63,46 @@ LIST_TEXT_CB(last_succeeded_on, PROPERTY_LAST_SUCCEEDED_ON);
 LIST_TEXT_CB(last_failed_on, PROPERTY_LAST_FAILED_ON);
 LIST_TEXT_CB(min_ping_time, PROPERTY_MINIMUM_PING_TIME);
 LIST_TEXT_CB(max_ping_time, PROPERTY_MAXIMUM_PING_TIME);
+
+static void setup_status_icon_cb(GtkListItemFactory *factory, GtkListItem *list_item) {
+    GtkWidget *area = gtk_drawing_area_new();
+
+    gtk_list_item_set_child(list_item, area); 
+}
+
+static void ping_list_status_draw(GtkDrawingArea* area, cairo_t* cr, int w, int h, gpointer data) {
+    PingHost* host = data;
+    GdkRGBA color;
+    bool status = ping_host_last_ping(host);
+
+    color.red   = status ? 0.0 : 1.0;
+    color.green = status ? 1.0 : 0.0;
+    color.blue  = 0.0;
+    color.alpha = 1.0;
+
+    gdk_cairo_set_source_rgba(cr, &color);
+    cairo_rectangle(cr, 0, 0, w, h);
+    cairo_fill(cr);
+}
+
+static void ping_list_draw_area(GObject* self, GParamSpec* pspec, gpointer data) {
+    gtk_widget_queue_draw(GTK_WIDGET(data));
+}
+
+static void bind_status_icon_cb(GtkListItemFactory *factory, GtkListItem *list_item) {
+    GtkWidget *area = gtk_list_item_get_child(list_item); 
+    PingHost *host = gtk_list_item_get_item(list_item); 
+
+    gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(area), ping_list_status_draw, host, NULL);
+    g_signal_connect(host, "notify::" PROPERTY_LAST_PING_STATUS, G_CALLBACK(ping_list_draw_area), area);
+}
+
+static void unbind_status_icon_cb(GtkListItemFactory *factory, GtkListItem *list_item) { 
+    GtkWidget *area = gtk_list_item_get_child(list_item); 
+    PingHost *host = gtk_list_item_get_item(list_item); 
+
+    g_signal_handlers_disconnect_by_data(host, area);
+}
 
 void ping_list_add_host(GtkWidget *widget, gpointer data) {
     g_return_if_fail(data != NULL);
@@ -113,6 +156,13 @@ GtkWidget *ping_create_host_list() {
     gtk_widget_set_name(column_view, "list");
     gtk_column_view_set_reorderable(GTK_COLUMN_VIEW(column_view), true);
     gtk_column_view_set_show_row_separators(GTK_COLUMN_VIEW(column_view), true);
+
+    GtkListItemFactory *factory = gtk_signal_list_item_factory_new();
+    g_signal_connect(factory, "setup", G_CALLBACK(setup_status_icon_cb), NULL); 
+    g_signal_connect(factory, "bind", G_CALLBACK(bind_status_icon_cb), NULL); 
+    g_signal_connect(factory, "unbind", G_CALLBACK(unbind_status_icon_cb), NULL); 
+    GtkColumnViewColumn *col_view_c = gtk_column_view_column_new("", factory); 
+    gtk_column_view_append_column(GTK_COLUMN_VIEW(column_view), col_view_c);
 
     LIST_ADD_COLUMN(column_view, "Name", name);
     LIST_ADD_COLUMN(column_view, "Host Name", hostname);

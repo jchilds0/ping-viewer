@@ -419,6 +419,10 @@ bool ping_host_is_valid(PingHost* host) {
     return host->addr != NULL;
 }
 
+bool ping_host_last_ping(PingHost* host) {
+    return host->internal.last_ping_succeeded;
+}
+
 void ping_host_reset_stats(PingHost* host) {
     host->internal.last_ping_succeeded = false;
     host->internal.ping_time_sum = 0;
