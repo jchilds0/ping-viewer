@@ -8,9 +8,11 @@
 #include "host.h"
 
 #include <netdb.h>
+#include <netinet/in.h>
 #include <stdio.h>
 #include <arpa/inet.h>
 #include <string.h>
+#include <sys/socket.h>
 
 #include "gio/gio.h"
 #include "glib-object.h"
@@ -236,7 +238,7 @@ static void ping_host_set_property(GObject* obj, guint prop_id, const GValue *va
         break;
 
     case PROP_LAST_PING_TTL:
-        self->failed_count = g_value_get_int64(value);
+        self->last_ping_ttl = g_value_get_int64(value);
         break;
 
     case PROP_AVERAGE_PING_TIME:
@@ -486,6 +488,16 @@ static void ping_host_thread(GTask* task, gpointer source_object,
         return;
     }
 
+    status = setsockopt(sock, IPPROTO_IP, IP_RECVTTL, &(int){1}, sizeof( int ));
+    if (status < 0) {
+        ping->msg = g_strdup("failed to set recvttl sock opt");
+        ping->succeeded = false;
+
+        ping_log("[%s] failed to set recvttl sock opt", host->addr);
+        g_task_return_pointer(task, ping, ping_free);
+        return;
+    }
+
     if (host->addr == NULL) {
         ping->succeeded = false;
 
@@ -507,7 +519,8 @@ static void ping_host_thread(GTask* task, gpointer source_object,
         return;
     }
 
-    status = ping_recv(sock, timeout, (struct sockaddr *)&rcv_addr, &rcv_addr_len, &seq_no);
+    int received_ttl = 0;
+    status = ping_recv(sock, timeout, (struct sockaddr *)&rcv_addr, &seq_no, &received_ttl);
     if (status < 0) {
         ping->msg = g_strdup(strerror(errno));
         ping->succeeded = false;
@@ -520,10 +533,10 @@ static void ping_host_thread(GTask* task, gpointer source_object,
     memset(rcv_buf, 0, sizeof rcv_buf);
     inet_ntop(AF_INET, &(rcv_addr.sin_addr), rcv_buf, rcv_addr_len);
 
-    sleep(5);
     if (g_task_set_return_on_cancel(task, FALSE)) {
         ping->msg = g_strdup("Succeeded");
         ping->reply_addr = strdup(rcv_buf);
+        ping->ttl = received_ttl;
         ping->succeeded = true;
 
         ping_log("[%s] received reply from %s", host->addr, ping->reply_addr);
@@ -573,6 +586,7 @@ static void ping_host_update_cb(GObject* source_object, GAsyncResult* res, gpoin
     ping_host_set_integer(host, PROPERTY_SUCCEEDED_COUNT, host->succeeded_count + ping->succeeded);
     ping_host_set_integer(host, PROPERTY_FAILED_COUNT, host->failed_count + !ping->succeeded);
     ping_host_set_integer(host, PROPERTY_TOTAL_PING_COUNT, host->total_ping_count + 1);
+    ping_host_set_integer(host, PROPERTY_LAST_PING_TTL, ping->ttl);
 
     GValue value_f = G_VALUE_INIT;
     g_value_init(&value_f, G_TYPE_DOUBLE);
