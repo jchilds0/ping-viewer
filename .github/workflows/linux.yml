@@ -1,0 +1,35 @@
+---
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Setup Environment
+      run: |
+          sudo apt-get update -q
+          sudo apt-get install gcc-multilib 
+          sudo apt-get install libgtk-2-dev 
+
+    - name: Build
+      run: |
+        meson setup build
+        ninja -C build --verbose
+
+    - name: Archive artifacts
+      uses: actions/upload-artifact@v6
+      with:
+        name: ping-viewer
+        path: build
