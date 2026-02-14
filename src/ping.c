@@ -6,15 +6,39 @@
  */
 
 #include "ping.h"
-#include "src/ping-viewer.h"
 
+#include <netinet/in.h>
 #include <netinet/ip_icmp.h>
+#include <string.h>
+#include <sys/socket.h>
+
+#include "gio/gio.h"
+#include "ping-viewer.h"
 
 #define BUFSIZE       2048
 
-int ping_send(int sock, struct sockaddr* addr, int addr_len, int seq_no) {
+GSocket *ping_socket(char* addr, int domain, int proto, GError** error) {
+    int sock = socket(domain, SOCK_DGRAM, proto);
+    if (socket < 0) {
+        return NULL;
+    }
+
+    setsockopt(sock, proto, IP_RECVTTL, &(int){1}, sizeof( int ));
+
+    GSocket* g_sock = g_socket_new_from_fd(sock, error);
+    if (*error != NULL) {
+        close(sock);
+        return NULL;
+    }
+
+    g_socket_set_blocking(g_sock, true);
+    return g_sock;
+}
+
+int ping_send(GSocket* sock, GSocketAddress* sockaddr, int seq_no, GError** error) {
     struct icmphdr icmp_hdr;
-    unsigned char data[BUFSIZE];
+    char data[BUFSIZE];
+    gsize size = sizeof( icmp_hdr );
 
     memset(&icmp_hdr, 0, sizeof icmp_hdr);
     icmp_hdr.type = ICMP_ECHO;
@@ -23,57 +47,46 @@ int ping_send(int sock, struct sockaddr* addr, int addr_len, int seq_no) {
     icmp_hdr.un.echo.sequence = seq_no;
     memcpy(data, &icmp_hdr, sizeof icmp_hdr);
 
-    return sendto(sock, data, sizeof icmp_hdr, 0, addr, addr_len);
+    return g_socket_send_to(sock, sockaddr, data, size, NULL, error);
 }
 
-int ping_recv(int sock, struct timeval timeout, struct sockaddr* rcv_addr, int* seq_no, int* ttl) {
-    int rc;
-    fd_set read_set = {0};
+void ping_recv(GSocket* sock, gint timeout, GSocketAddress** rcv_addr, int* seq_no, int* ttl, GError** error) {
+    g_socket_set_timeout(sock, timeout);
 
-    const size_t largestPacketExpected = 1500;
-    uint8_t buffer[largestPacketExpected];
-    struct iovec iov[1] = { { buffer, sizeof(buffer) } };
-    struct sockaddr_storage srcAddress;
-    uint8_t ctrlDataBuffer[CMSG_SPACE(sizeof(uint8_t))];
+    GSocketControlMessage** messages;
+    gint num_messages = 0;
+    gint flags = 0;
 
-    struct msghdr hdr = {
-        .msg_name = &srcAddress,
-        .msg_namelen = sizeof(srcAddress),
-        .msg_iov = iov,
-        .msg_iovlen = 1,
-        .msg_control = ctrlDataBuffer,
-        .msg_controllen = sizeof(ctrlDataBuffer)
-    };
-
-    FD_SET(sock, &read_set);
-
-    // wait for a reply with a timeout
-    rc = select(sock + 1, &read_set, NULL, NULL, &timeout);
-    if (rc <= 0) {
-        return -1;
+    g_socket_receive_message(sock, rcv_addr, NULL, 0, &messages, &num_messages, &flags, NULL, error);
+    if (error != NULL) {
+        return;
     }
 
-    rc = recvmsg(sock, &hdr, 0);
-    if (rc <= 0) {
-        return -1;
-    }
+    for (size_t i = 0; i < num_messages; i++) {
+        GSocketControlMessage* cmsg = messages[i];
 
-    *rcv_addr = *(struct sockaddr *)&srcAddress;
-
-    struct cmsghdr *cmsg;
-    for (cmsg = CMSG_FIRSTHDR(&hdr); cmsg != NULL; cmsg = CMSG_NXTHDR(&hdr, cmsg)) {
-        if (cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_TTL) {
-            memcpy(ttl, CMSG_DATA(cmsg), sizeof(*ttl));
-            break;
+        if (g_socket_control_message_get_level(cmsg) != IPPROTO_IP) {
+            goto CONTINUE;
         }
+
+        if (g_socket_control_message_get_level(cmsg) != IP_TTL) {
+            goto CONTINUE;
+        }
+
+        if (g_socket_control_message_get_size(cmsg) != sizeof( int )) {
+            ping_log("invalid control message size");
+            *ttl = 0;
+            goto CONTINUE;
+        }
+
+        g_socket_control_message_serialize(cmsg, ttl);
+
+    CONTINUE:
+        g_object_unref(cmsg);
     }
 
-    if (cmsg == NULL) {
-        ping_log("IP_RECVTTL not enabled");
-        return -1;
-    }
-
-    return 0;
+    g_free(messages);
+    return;
 }
 
 void ping_free(gpointer data) {

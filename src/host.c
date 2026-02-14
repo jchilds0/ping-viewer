@@ -9,7 +9,10 @@
 
 #include <netdb.h>
 #include <arpa/inet.h>
+#include <netinet/in.h>
 
+#include "gio/gio.h"
+#include "glib.h"
 #include "ping.h"
 #include "ping-viewer.h"
 
@@ -380,32 +383,50 @@ void ping_host_set_string(PingHost* host, const gchar* prop_name, const gchar* v
     g_value_unset(&string);
 }
 
+void ping_host_update_address(PingHost* host) {
+    GError* error = NULL;
+    GResolver* resolver = g_resolver_get_default();
+    GList* names = NULL;
+
+    names = g_resolver_lookup_by_name(resolver, host->hostname, NULL, &error);
+    if (error != NULL) {
+        ping_log("[%s] resolver error: %s", host->hostname, error->message);
+        return;
+    }
+
+    GList* addr = g_list_first(names);
+    if (addr == NULL) {
+        ping_log("[%s] no ip addresses found", host->hostname);
+        return;
+    }
+
+    GInetAddress* inet_addr = NULL;
+    for (size_t i = 0; i < g_list_length(names); i++) {
+        inet_addr = g_list_nth(names, i)->data;
+
+        if (g_inet_address_get_family(inet_addr) == G_SOCKET_FAMILY_IPV4) {
+            break;
+        }
+    }
+
+    ping_host_set_string(host, "address", g_inet_address_to_string(inet_addr));
+    g_resolver_free_addresses(names);
+}
+
 void ping_host_update_hostname(PingHost* host) {
-    char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
-    struct sockaddr_in addr_in = {0};
-    struct in_addr _in_addr;
-    int s;
+    GError* error = NULL;
+    GResolver* resolver = g_resolver_get_default();
+    gchar* hostname = NULL;
 
-    if (inet_pton(AF_INET, host->addr, &_in_addr) == 0) {
-        printf("%s isn't a valid IP address\n", host->addr);
+    g_autoptr(GInetAddress) inet_addr = g_inet_address_new_from_string(host->hostname);
+
+    hostname = g_resolver_lookup_by_address(resolver, inet_addr, NULL, &error);
+    if (error != NULL) {
+        ping_log("[%s] resolver error: %s", host->hostname, error->message);
         return;
     }
 
-    addr_in.sin_family = AF_INET;
-    addr_in.sin_addr = _in_addr;
-
-    s = getnameinfo(
-        (struct sockaddr *)&addr_in, sizeof( addr_in ), 
-        hbuf, sizeof(hbuf), 
-        sbuf, sizeof(sbuf), 
-        NI_NUMERICHOST | NI_NUMERICSERV
-    );
-    if (s != 0) {
-        fprintf(stderr, "getnameinfo: %s\n", gai_strerror(s));
-        return;
-    }
-
-    ping_host_set_string(host, "hostname", hbuf);
+    ping_host_set_string(host, "hostname", hostname);
 }
 
 bool ping_host_is_valid(PingHost* host) {
@@ -438,101 +459,82 @@ void ping_host_reset_stats(PingHost* host) {
     ping_host_set_integer(host, PROPERTY_MAXIMUM_PING_TIME, 0);
 }
 
-void ping_host_update_address(PingHost* host) {
-    int s;
-    struct addrinfo hints;
-    struct addrinfo *result;
-
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET;      /* Allow IPv4 only */
-    hints.ai_socktype = SOCK_STREAM; /* Stream socket */
-    hints.ai_flags = AI_PASSIVE;    /* For wildcard IP address */
-    hints.ai_protocol = 0;          /* Any protocol */
-    hints.ai_canonname = NULL;
-    hints.ai_addr = NULL;
-    hints.ai_next = NULL;
-
-    s = getaddrinfo(host->hostname, NULL, &hints, &result);
-    if (s != 0) {
-        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
-        return;
-    }
-
-    struct sockaddr_in *sin_addr = (struct sockaddr_in *)result[0].ai_addr;
-    ping_host_set_string(host, "address", inet_ntoa(sin_addr->sin_addr));
-}
-
 static void ping_host_thread(GTask* task, gpointer source_object, 
                              gpointer task_data, GCancellable* cancellable) {
     PingHost* host = PING_HOST(source_object);
     ping_t* ping = g_malloc0(sizeof( ping_t ));
-    int sock, status, seq_no = 0;
+    GError* error = NULL;
+    gint timeout = 3;
+    int seq_no = 0, received_ttl = 0;
 
     ping_log("[%s] icmp echo ping", host->addr);
 
-    struct timeval timeout = {3, 0};
-    struct sockaddr_in addr_in = {0}, rcv_addr = {0};
-    socklen_t rcv_addr_len = sizeof rcv_addr;
-    char rcv_buf[2048];
-
-    sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
-    if (socket < 0) {
-        ping->msg = g_strdup("invalid internal socket");
+    g_autoptr(GSocketAddress) sockaddr = g_inet_socket_address_new_from_string(host->addr, 0);
+    if (sockaddr == NULL) {
+        ping->msg = g_strdup("invalid address");
         ping->succeeded = false;
 
-        ping_log("[%s] invalid internal socket", host->addr);
+        ping_log("[%s] %s", host->name, ping->msg);
         g_task_return_pointer(task, ping, ping_free);
         return;
     }
 
-    status = setsockopt(sock, IPPROTO_IP, IP_RECVTTL, &(int){1}, sizeof( int ));
-    if (status < 0) {
-        ping->msg = g_strdup("failed to set recvttl sock opt");
+    GInetAddress* inet_addr = g_inet_socket_address_get_address(G_INET_SOCKET_ADDRESS(sockaddr));
+    GSocketFamily family = g_inet_address_get_family(inet_addr);
+    int proto;
+
+    switch (family) {
+    case G_SOCKET_FAMILY_IPV4:
+        proto = IPPROTO_ICMP;
+        break;
+    case G_SOCKET_FAMILY_IPV6:
+        proto = IPPROTO_ICMPV6;
+        break;
+    default:
+        return;
+    }
+
+    g_autoptr(GSocket) sock = ping_socket(host->addr, family, proto, &error);
+    if (sock == NULL) {
+        if (error != NULL) {
+            ping->msg = g_strdup(error->message);
+        } else {
+            ping->msg = g_strdup("error creating socket");
+        }
         ping->succeeded = false;
 
-        ping_log("[%s] failed to set recvttl sock opt", host->addr);
+        ping_log("[%s] %s", host->addr, ping->msg);
         g_task_return_pointer(task, ping, ping_free);
         return;
     }
 
-    if (host->addr == NULL) {
+    ping_send(sock, sockaddr, seq_no, &error);
+    if (error != NULL) {
+        ping->msg = g_strdup_printf("send error: %s", error->message);
         ping->succeeded = false;
 
-        ping_log("[%s] missing remote address", host->addr);
+        ping_log("[%s] %s", host->addr, ping->msg);
         g_task_return_pointer(task, ping, ping_free);
         return;
     }
 
-    addr_in.sin_family = AF_INET;
-    addr_in.sin_addr.s_addr = inet_addr(host->addr);
-
-    status = ping_send(sock, (struct sockaddr *)&addr_in, sizeof( addr_in ), seq_no);
-    if (status <= 0) {
-        ping->msg = g_strdup(strerror(errno));
+    GSocketAddress* rcv_addr;
+    ping_recv(sock, timeout, &rcv_addr, &seq_no, &received_ttl, &error);
+    if (error != NULL) {
+        ping->msg = g_strdup_printf("recv error: %s", error->message);
         ping->succeeded = false;
 
-        ping_log("[%s] error receiving response: %s", host->addr, ping->msg);
+        ping_log("[%s] %s", host->addr, ping->msg);
         g_task_return_pointer(task, ping, ping_free);
         return;
     }
 
-    int received_ttl = 0;
-    status = ping_recv(sock, timeout, (struct sockaddr *)&rcv_addr, &seq_no, &received_ttl);
-    if (status < 0) {
-        ping->msg = g_strdup(strerror(errno));
-        ping->succeeded = false;
-
-        ping_log("[%s] error receiving response: %s", host->addr, ping->msg);
-        g_task_return_pointer(task, ping, ping_free);
-        return;
-    }
-
-    memset(rcv_buf, 0, sizeof rcv_buf);
-    inet_ntop(AF_INET, &(rcv_addr.sin_addr), rcv_buf, rcv_addr_len);
+    g_autoptr(GInetAddress) rcv_inet_addr = g_inet_socket_address_get_address(G_INET_SOCKET_ADDRESS(rcv_addr));
+    gchar* reply_addr = g_inet_address_to_string(inet_addr);
 
     if (g_task_set_return_on_cancel(task, FALSE)) {
         ping->msg = g_strdup("Succeeded");
-        ping->reply_addr = strdup(rcv_buf);
+        ping->reply_addr = reply_addr;
         ping->ttl = received_ttl;
         ping->succeeded = true;
 
@@ -542,7 +544,7 @@ static void ping_host_thread(GTask* task, gpointer source_object,
 }
 
 static gchar* current_time() {
-    g_autofree GDateTime* now = g_date_time_new_now_local();
+    g_autoptr(GDateTime) now = g_date_time_new_now_local();
 
     return g_strdup_printf(PING_TIME_FORMAT, 
         g_date_time_get_year(now),
@@ -625,12 +627,11 @@ void ping_host_ping_task(PingHost* host) {
     }
 
     host->cancel = g_cancellable_new();
-    GTask* task = g_task_new(host, host->cancel, ping_host_update_cb, host);
+    g_autoptr(GTask) task = g_task_new(host, host->cancel, ping_host_update_cb, host);
 
     ping_log("[%s] starting ping task", host->addr);
     g_task_set_return_on_cancel(task, TRUE);
     g_task_run_in_thread(task, ping_host_thread);
-    g_object_unref(task);
 }
 
 void ping_host_cancel_current_ping(PingHost* host) {
