@@ -104,8 +104,8 @@ static void unbind_status_icon_cb(GtkListItemFactory *factory, GtkListItem *list
     g_signal_handlers_disconnect_by_data(host, area);
 }
 
-void ping_list_add_host(GtkWidget *widget, gpointer data) {
-    g_return_if_fail(data != NULL);
+PingHost* ping_list_add_host(GtkWidget *widget, gpointer data) {
+    g_return_val_if_fail(data != NULL, NULL);
 
     GtkWidget* column_view = data;
     GtkSelectionModel* model = gtk_column_view_get_model(GTK_COLUMN_VIEW(column_view));
@@ -113,6 +113,8 @@ void ping_list_add_host(GtkWidget *widget, gpointer data) {
 
     PingHost* host = g_object_new(PING_TYPE_HOST, NULL);
     g_list_store_append(G_LIST_STORE(list_model), host);
+
+    return host;
 }
 
 void ping_list_remove_host(GtkWidget *widget, gpointer data) {

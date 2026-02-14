@@ -5,6 +5,7 @@
 
 #include "glib-object.h"
 #include "gtk/gtk.h"
+#include "src/host.h"
 
 #define LIST_TEXT_SET_LISTITEM(column_name) \
     static void setup_listitem_##column_name##_cb(GtkListItemFactory *factory, GtkListItem *list_item) { \
@@ -52,7 +53,7 @@
         gtk_column_view_append_column(GTK_COLUMN_VIEW(col_view), col_view_c); \
     }
 
-void ping_list_add_host(GtkWidget* widget, gpointer data);
+PingHost* ping_list_add_host(GtkWidget* widget, gpointer data);
 void ping_list_remove_host(GtkWidget *widget, gpointer data);
 GtkWidget* ping_create_host_list();
 

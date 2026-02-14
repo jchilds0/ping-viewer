@@ -7,6 +7,8 @@
 
 #include "glib.h"
 #include "list.h"
+#include "src/conf.h"
+#include <stdlib.h>
 
 static void activate(GtkApplication* app, gpointer user_data) {
     GtkWidget *window;
@@ -55,6 +57,12 @@ static void activate(GtkApplication* app, gpointer user_data) {
 
         g_object_unref(css_provider);
         g_free(css_path);
+    }
+
+    /* load config */
+    gchar* conf_path = g_strdup_printf("%s/%s", g_get_user_config_dir(), PING_VIEWER_CONF_FILE);
+    if (!load_config(list_host, conf_path)) {
+        exit(1);
     }
 
     gtk_window_present(GTK_WINDOW(window));
