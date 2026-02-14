@@ -5,10 +5,8 @@
 
 #include "ping-viewer.h"
 
-#include "glib.h"
 #include "list.h"
-#include "src/conf.h"
-#include <stdlib.h>
+#include "conf.h"
 
 static void activate(GtkApplication* app, gpointer user_data) {
     GtkWidget *window;

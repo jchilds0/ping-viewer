@@ -8,17 +8,10 @@
 #include "host.h"
 
 #include <netdb.h>
-#include <netinet/in.h>
-#include <stdio.h>
 #include <arpa/inet.h>
-#include <string.h>
-#include <sys/socket.h>
 
-#include "gio/gio.h"
-#include "glib-object.h"
-#include "glib.h"
 #include "ping.h"
-#include "src/ping-viewer.h"
+#include "ping-viewer.h"
 
 #define BUFSIZE             2048
 

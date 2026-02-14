@@ -5,7 +5,8 @@
 
 #include "glib-object.h"
 #include "gtk/gtk.h"
-#include "src/host.h"
+
+#include "host.h"
 
 #define LIST_TEXT_SET_LISTITEM(column_name) \
     static void setup_listitem_##column_name##_cb(GtkListItemFactory *factory, GtkListItem *list_item) { \

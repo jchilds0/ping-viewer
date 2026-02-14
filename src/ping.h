@@ -4,7 +4,6 @@
 #include "glib.h"
 #include <netinet/in.h>
 #include <stdbool.h>
-#include <stdint.h>
 
 typedef struct ping_s {
     bool succeeded;

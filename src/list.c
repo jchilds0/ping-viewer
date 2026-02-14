@@ -6,14 +6,6 @@
 
 #include "list.h"
 
-#include "cairo.h"
-#include "gdk/gdk.h"
-#include "gio/gio.h"
-#include "glib-object.h"
-#include "glib.h"
-#include "gtk/gtk.h"
-#include "host.h"
-
 #define PING_INTERVAL         (10 * 1000)
 
 static void empty_cb(GtkWidget* widget, gpointer data) {}

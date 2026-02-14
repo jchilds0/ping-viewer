@@ -6,26 +6,11 @@
  */
 
 #include "ping.h"
+#include "src/ping-viewer.h"
 
-#include <stdio.h>
-#include <string.h>
 #include <netinet/ip_icmp.h>
-#include <arpa/inet.h>
 
 #define BUFSIZE       2048
-
-int ping_addr(const char *addr, int n, struct sockaddr_in *sock_addr) {
-    struct in_addr _in_addr;
-    if (inet_pton(AF_INET, addr, &_in_addr) == 0) {
-        printf("%s isn't a valid IP address\n", addr);
-        return -1;
-    }
-
-    memset(sock_addr, 0, n);
-    sock_addr->sin_family = AF_INET;
-    sock_addr->sin_addr = _in_addr;
-    return 0;
-}
 
 int ping_send(int sock, struct sockaddr* addr, int addr_len, int seq_no) {
     struct icmphdr icmp_hdr;
@@ -84,7 +69,7 @@ int ping_recv(int sock, struct timeval timeout, struct sockaddr* rcv_addr, int* 
     }
 
     if (cmsg == NULL) {
-        printf("IP_RECVTTL not enabled\n");
+        ping_log("IP_RECVTTL not enabled");
         return -1;
     }
 

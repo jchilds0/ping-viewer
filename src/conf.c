@@ -4,12 +4,8 @@
 
 #include "conf.h"
 
-#include <glib/gstdio.h>
-
-#include "glib.h"
 #include "ping-viewer.h"
-#include "src/host.h"
-#include "src/list.h"
+#include "list.h"
 
 bool load_config(GtkWidget* column_view, const char* path) {
     /* open file */
