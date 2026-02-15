@@ -13,6 +13,7 @@ typedef struct ping_s {
     gchar* reply_addr;
 } ping_t;
 
+int ping_family_to_protocol(GSocketFamily family);
 GSocket *ping_socket(char* addr, int domain, int proto, GError** error);
 int ping_send(GSocket* sock, GSocketAddress* sockaddr, int seq_no, GError** error);
 void ping_recv(GSocket* sock, gint timeout, GSocketAddress** rcv_addr, int* seq_no, int* ttl, GError** error);

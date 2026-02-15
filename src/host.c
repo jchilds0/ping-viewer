@@ -7,12 +7,6 @@
 
 #include "host.h"
 
-#include <netdb.h>
-#include <arpa/inet.h>
-#include <netinet/in.h>
-
-#include "gio/gio.h"
-#include "glib.h"
 #include "ping.h"
 #include "ping-viewer.h"
 
@@ -384,7 +378,7 @@ void ping_host_set_string(PingHost* host, const gchar* prop_name, const gchar* v
 }
 
 void ping_host_update_address(PingHost* host) {
-    GError* error = NULL;
+    g_autoptr(GError) error = NULL;
     GResolver* resolver = g_resolver_get_default();
     GList* names = NULL;
 
@@ -400,21 +394,14 @@ void ping_host_update_address(PingHost* host) {
         return;
     }
 
-    GInetAddress* inet_addr = NULL;
-    for (size_t i = 0; i < g_list_length(names); i++) {
-        inet_addr = g_list_nth(names, i)->data;
-
-        if (g_inet_address_get_family(inet_addr) == G_SOCKET_FAMILY_IPV4) {
-            break;
-        }
-    }
+    GInetAddress* inet_addr = g_list_first(names)->data;
 
     ping_host_set_string(host, "address", g_inet_address_to_string(inet_addr));
     g_resolver_free_addresses(names);
 }
 
 void ping_host_update_hostname(PingHost* host) {
-    GError* error = NULL;
+    g_autoptr(GError) error = NULL;
     GResolver* resolver = g_resolver_get_default();
     gchar* hostname = NULL;
 
@@ -463,7 +450,7 @@ static void ping_host_thread(GTask* task, gpointer source_object,
                              gpointer task_data, GCancellable* cancellable) {
     PingHost* host = PING_HOST(source_object);
     ping_t* ping = g_malloc0(sizeof( ping_t ));
-    GError* error = NULL;
+    g_autoptr(GError) error = NULL;
     gint timeout = 3;
     int seq_no = 0, received_ttl = 0;
 
@@ -481,16 +468,14 @@ static void ping_host_thread(GTask* task, gpointer source_object,
 
     GInetAddress* inet_addr = g_inet_socket_address_get_address(G_INET_SOCKET_ADDRESS(sockaddr));
     GSocketFamily family = g_inet_address_get_family(inet_addr);
-    int proto;
 
-    switch (family) {
-    case G_SOCKET_FAMILY_IPV4:
-        proto = IPPROTO_ICMP;
-        break;
-    case G_SOCKET_FAMILY_IPV6:
-        proto = IPPROTO_ICMPV6;
-        break;
-    default:
+    int proto = ping_family_to_protocol(family);
+    if (proto < 0) {
+        ping->msg = g_strdup("invalid socket family");
+        ping->succeeded = false;
+
+        ping_log("[%s] %s", host->addr, ping->msg);
+        g_task_return_pointer(task, ping, ping_free);
         return;
     }
 
@@ -510,10 +495,10 @@ static void ping_host_thread(GTask* task, gpointer source_object,
 
     ping_send(sock, sockaddr, seq_no, &error);
     if (error != NULL) {
-        ping->msg = g_strdup_printf("send error: %s", error->message);
+        ping->msg = g_strdup(error->message);
         ping->succeeded = false;
 
-        ping_log("[%s] %s", host->addr, ping->msg);
+        ping_log("[%s] send error: %s", host->addr, ping->msg);
         g_task_return_pointer(task, ping, ping_free);
         return;
     }
@@ -521,10 +506,10 @@ static void ping_host_thread(GTask* task, gpointer source_object,
     GSocketAddress* rcv_addr;
     ping_recv(sock, timeout, &rcv_addr, &seq_no, &received_ttl, &error);
     if (error != NULL) {
-        ping->msg = g_strdup_printf("recv error: %s", error->message);
+        ping->msg = g_strdup(error->message);
         ping->succeeded = false;
 
-        ping_log("[%s] %s", host->addr, ping->msg);
+        ping_log("[%s] recv error: %s", host->addr, ping->msg);
         g_task_return_pointer(task, ping, ping_free);
         return;
     }
@@ -594,17 +579,14 @@ static void ping_host_update_cb(GObject* source_object, GAsyncResult* res, gpoin
     g_object_set_property(G_OBJECT(host), PROPERTY_PERCENTAGE_FAILED, &value_f);
     g_value_unset(&value_f);
 
-    if (host->internal.last_ping_succeeded) {
-        ping_host_set_integer(host, PROPERTY_CONSECUTIVE_FAILED_COUNT, 0);
-    }
-
     if (ping->succeeded) {
         ping_host_set_string(host, PROPERTY_LAST_SUCCEEDED_ON, now_str);
+        ping_host_set_integer(host, PROPERTY_CONSECUTIVE_FAILED_COUNT, 0);
     } else {
         ping_host_set_string(host, PROPERTY_LAST_FAILED_ON, now_str);
     }
 
-    if (!host->internal.last_ping_succeeded && !ping->succeeded) {
+    if (!ping->succeeded) {
         ping_host_set_integer(host, PROPERTY_CONSECUTIVE_FAILED_COUNT, host->cons_failed_count + 1);
 
         if (host->cons_failed_count > host->max_cons_failed_count) {

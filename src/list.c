@@ -132,6 +132,10 @@ static gboolean ping_list_ping_hosts(gpointer data) {
         PingHost* host = PING_HOST(item);
 
         if (!ping_host_is_valid(host)) {
+            ping_host_update_address(host);
+        }
+
+        if (!ping_host_is_valid(host)) {
             continue;
         }
 

@@ -7,15 +7,26 @@
 
 #include "ping.h"
 
-#include <netinet/in.h>
 #include <netinet/ip_icmp.h>
-#include <string.h>
-#include <sys/socket.h>
+#include <netinet/icmp6.h>
 
-#include "gio/gio.h"
 #include "ping-viewer.h"
 
 #define BUFSIZE       2048
+
+static struct icmphdr icmp_hdr = {.type = ICMP_ECHO, .un.echo.id = 1};
+static struct icmp6_hdr icmp6_hdr = {.icmp6_type = ICMP6_ECHO_REQUEST};
+
+int ping_family_to_protocol(GSocketFamily family) {
+    switch (family) {
+    case G_SOCKET_FAMILY_IPV4:
+        return IPPROTO_ICMP;
+    case G_SOCKET_FAMILY_IPV6:
+        return IPPROTO_ICMPV6;
+    default:
+        return -1;
+    }
+}
 
 GSocket *ping_socket(char* addr, int domain, int proto, GError** error) {
     int sock = socket(domain, SOCK_DGRAM, proto);
@@ -36,16 +47,22 @@ GSocket *ping_socket(char* addr, int domain, int proto, GError** error) {
 }
 
 int ping_send(GSocket* sock, GSocketAddress* sockaddr, int seq_no, GError** error) {
-    struct icmphdr icmp_hdr;
     char data[BUFSIZE];
-    gsize size = sizeof( icmp_hdr );
+    gsize size = 0;
+    GSocketFamily family = g_socket_address_get_family(sockaddr);
 
-    memset(&icmp_hdr, 0, sizeof icmp_hdr);
-    icmp_hdr.type = ICMP_ECHO;
-    icmp_hdr.un.echo.id = 1;
-
-    icmp_hdr.un.echo.sequence = seq_no;
-    memcpy(data, &icmp_hdr, sizeof icmp_hdr);
+    switch (family) {
+    case G_SOCKET_FAMILY_IPV4:
+        memcpy(data, &icmp_hdr, sizeof icmp_hdr);
+        size = sizeof( icmp_hdr );
+        break;
+    case G_SOCKET_FAMILY_IPV6:
+        memcpy(data, &icmp6_hdr, sizeof icmp_hdr);
+        size = sizeof( icmp6_hdr );
+        break;
+    default:
+        return -1;
+    }
 
     return g_socket_send_to(sock, sockaddr, data, size, NULL, error);
 }
